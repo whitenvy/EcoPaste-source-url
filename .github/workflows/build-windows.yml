@@ -20,10 +20,9 @@ jobs:
         with:
           toolchain: 1.96.0
       - run: pnpm install --frozen-lockfile
-      - run: pnpm tauri build
+      - run: pnpm tauri build --no-bundle
       - uses: actions/upload-artifact@v4
         with:
           name: ecopaste-windows
           path: |
-            src-tauri/target/release/bundle/**/*.exe
-            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/EcoPaste.exe
