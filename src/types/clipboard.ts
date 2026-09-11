@@ -41,6 +41,7 @@ export interface ClipboardItem {
   subKind: ClipboardSubKind | null;
   groupId: string | null;
   sourceAppId: string | null;
+  sourceUrl: string | null;
   content: string;
   contentHash: string;
   searchText: string | null;

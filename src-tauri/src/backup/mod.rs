@@ -1591,6 +1591,7 @@ mod tests {
             sub_kind: None,
             group_id: None,
             source_app_id: None,
+            source_url: None,
             content_hash: content_hash(ClipboardKind::Text, &content),
             content,
             search_text: None,

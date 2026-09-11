@@ -36,6 +36,50 @@ pub fn detect_frontmost() -> Option<FrontmostApp> {
     }
 }
 
+/// Chrome places the originating page in the CF_HTML `SourceURL` header.
+/// Parsing the already-captured clipboard payload keeps this path synchronous
+/// without UI Automation or an extension.
+pub fn extract_source_url(html: Option<&str>) -> Option<String> {
+    let html = html?;
+    let line = html.lines().find(|line| line.starts_with("SourceURL:"))?;
+    let value = line["SourceURL:".len()..].trim();
+    if value.is_empty() {
+        return None;
+    }
+    let url = if value.starts_with("http://") || value.starts_with("https://") {
+        value.to_owned()
+    } else {
+        format!("https://{value}")
+    };
+    url::Url::parse(&url)
+        .ok()
+        .filter(|parsed| matches!(parsed.scheme(), "http" | "https"))
+        .map(|_| url)
+}
+
+pub fn is_chrome(app: &FrontmostApp) -> bool {
+    app.name.eq_ignore_ascii_case("chrome")
+        || app.name.eq_ignore_ascii_case("google chrome")
+        || app.id.eq_ignore_ascii_case("com.google.Chrome")
+        || app.id.to_ascii_lowercase().ends_with("\\chrome.exe")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_source_url;
+
+    #[test]
+    fn extracts_chrome_cf_html_source_url() {
+        assert_eq!(
+            extract_source_url(Some(
+                "Version:1.0\r\nSourceURL:https://example.com/page\r\n<html>"
+            )),
+            Some("https://example.com/page".to_owned())
+        );
+        assert_eq!(extract_source_url(Some("SourceURL:not a url")), None);
+    }
+}
+
 #[cfg(target_os = "macos")]
 mod macos {
     use super::{FrontmostApp, Platform};

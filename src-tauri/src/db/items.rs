@@ -8,7 +8,7 @@ use crate::db::models::{
     ClipboardGroupFilter, ClipboardItem, ClipboardItemQuery, ClipboardItemSort, ClipboardKind,
 };
 
-const SELECT_ITEM: &str = "SELECT id, kind, sub_kind, group_id, source_app_id, content, \
+const SELECT_ITEM: &str = "SELECT id, kind, sub_kind, group_id, source_app_id, source_url, content, \
      content_hash, search_text, summary, file_types, size, width, height, use_count, is_favorite, is_pinned, \
      is_sensitive, platform, note, created_at, updated_at FROM clipboard_items";
 
@@ -20,7 +20,7 @@ const SELECT_ITEM: &str = "SELECT id, kind, sub_kind, group_id, source_app_id, c
 /// LEFT JOIN `clipboard_apps` 顺带把来源应用名 / 图标文件名带回，前端直接渲染，
 /// 不再额外发 list_clipboard_apps + get_clipboard_app_icon_path 请求。
 const LIST_SELECT_ITEM: &str = "SELECT clipboard_items.id, clipboard_items.kind, \
-     clipboard_items.sub_kind, clipboard_items.group_id, clipboard_items.source_app_id, \
+     clipboard_items.sub_kind, clipboard_items.group_id, clipboard_items.source_app_id, clipboard_items.source_url, \
      CASE WHEN clipboard_items.kind = 'text' THEN '' ELSE clipboard_items.content END AS content, \
      clipboard_items.content_hash, \
      CASE WHEN clipboard_items.kind = 'text' THEN NULL ELSE clipboard_items.search_text END AS search_text, \
@@ -104,16 +104,17 @@ pub async fn find_item_by_content_hash(
 pub async fn insert_item(pool: &SqlitePool, item: &ClipboardItem) -> Result<()> {
     sqlx::query(
         "INSERT INTO clipboard_items \
-         (id, kind, sub_kind, group_id, source_app_id, content, content_hash, search_text, \
+         (id, kind, sub_kind, group_id, source_app_id, source_url, content, content_hash, search_text, \
           summary, file_types, size, width, height, use_count, is_favorite, is_pinned, is_sensitive, platform, note, \
           created_at, updated_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(item.id.as_str())
     .bind(item.kind)
     .bind(item.sub_kind)
     .bind(item.group_id.as_deref())
     .bind(item.source_app_id.as_deref())
+    .bind(item.source_url.as_deref())
     .bind(item.content.as_str())
     .bind(item.content_hash.as_str())
     .bind(item.search_text.as_deref())
@@ -576,6 +577,7 @@ mod tests {
             sub_kind: None,
             group_id: None,
             source_app_id: None,
+            source_url: None,
             content_hash: content_hash(ClipboardKind::Text, &content),
             content,
             search_text: None,

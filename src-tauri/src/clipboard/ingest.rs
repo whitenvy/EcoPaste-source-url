@@ -307,6 +307,7 @@ pub fn build_item_with_settings(
         sub_kind: draft.sub_kind,
         group_id: None,
         source_app_id: None,
+        source_url: None,
         content: draft.content,
         search_text: draft.search_text,
         summary: draft.summary,

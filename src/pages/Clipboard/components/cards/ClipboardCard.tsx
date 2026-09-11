@@ -1,7 +1,7 @@
 import type { DragEvent, FC, MouseEvent, PointerEvent, Ref } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { popupClipboardItemMenu, startDragClipboardItem } from "@/commands";
+import { openExternalUrl, popupClipboardItemMenu, startDragClipboardItem } from "@/commands";
 import AssetImage from "@/components/AssetImage";
 import KeyHint from "@/components/KeyHint";
 import type { ItemActionLabels } from "@/constants/itemActions";
@@ -81,6 +81,7 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
   const [hovered, setHovered] = useState(false);
   const typeKey = subKind ?? kind;
   const typeLabel = t(`types.${typeKey}`);
+  const sourceUrl = item.sourceUrl;
   const body = renderBody(item, isLinkActive, onOpenLink);
   const showSensitiveIndicator = item.isSensitive && item.kind === "text";
   const showStatusIndicators = item.isPinned || showSensitiveIndicator;
@@ -167,6 +168,20 @@ const ClipboardCard: FC<ClipboardCardProps> = (props) => {
 
           <span className="truncate">{typeLabel}</span>
         </div>
+
+        {sourceUrl ? (
+          <button
+            className="min-w-0 max-w-[45%] truncate text-ant-primary hover:underline"
+            title={sourceUrl}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void openExternalUrl(sourceUrl);
+            }}
+          >
+            {sourceUrl.replace(/^https?:\/\//, "")}
+          </button>
+        ) : null}
 
         <ClipboardQuickActions
           item={item}

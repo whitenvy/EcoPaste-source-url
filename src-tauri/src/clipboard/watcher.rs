@@ -323,6 +323,12 @@ impl ClipboardHandler for ClipboardChangeHandler {
             }
         };
 
+        if source.as_ref().is_some_and(source::is_chrome) {
+            if let crate::clipboard::payload::ClipboardPayload::Text(text) = &payload {
+                item.source_url = source::extract_source_url(text.html.as_deref());
+            }
+        }
+
         // 自身写回触发的变更：跳过入库，避免回环。
         if self.guard.should_skip(&item.content_hash) {
             return;

@@ -42,6 +42,7 @@ pub struct ClipboardItem {
     /// 监听 / 命令链路若未能取到前台应用则为 `None`。引用 `clipboard_apps(id)`，
     /// 删除应用记录时置 NULL，不会级联删条目。
     pub source_app_id: Option<String>,
+    pub source_url: Option<String>,
     pub content: String,
     /// 去重指纹：`blake3(kind:content)`，由 `db::items::content_hash` 计算并在入库前比对。
     pub content_hash: String,
