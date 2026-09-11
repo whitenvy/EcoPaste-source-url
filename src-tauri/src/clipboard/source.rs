@@ -64,6 +64,53 @@ pub fn is_chrome(app: &FrontmostApp) -> bool {
         || app.id.to_ascii_lowercase().ends_with("\\chrome.exe")
 }
 
+#[cfg(not(target_os = "windows"))]
+pub fn read_chrome_source_url() -> Option<String> {
+    None
+}
+
+#[cfg(target_os = "windows")]
+pub fn read_chrome_source_url() -> Option<String> {
+    use std::ptr;
+    use winapi::shared::minwindef::UINT;
+    use winapi::um::winbase::{GlobalLock, GlobalSize, GlobalUnlock};
+    use winapi::um::winuser::{
+        CloseClipboard, GetClipboardData, OpenClipboard, RegisterClipboardFormatW,
+    };
+
+    let name: Vec<u16> = "HTML Format"
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    let format = unsafe { RegisterClipboardFormatW(name.as_ptr()) } as UINT;
+    if format == 0 || unsafe { OpenClipboard(ptr::null_mut()) } == 0 {
+        return None;
+    }
+    let result = unsafe {
+        let handle = GetClipboardData(format);
+        if handle.is_null() {
+            None
+        } else {
+            let size = GlobalSize(handle);
+            let ptr = GlobalLock(handle) as *const u8;
+            let value = if ptr.is_null() || size == 0 {
+                None
+            } else {
+                let bytes = std::slice::from_raw_parts(ptr, size);
+                std::str::from_utf8(bytes)
+                    .ok()
+                    .and_then(|raw| extract_source_url(Some(raw)))
+            };
+            let _ = GlobalUnlock(handle);
+            value
+        }
+    };
+    unsafe {
+        CloseClipboard();
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::extract_source_url;
