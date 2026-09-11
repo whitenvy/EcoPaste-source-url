@@ -394,7 +394,7 @@ fn scheduled_task_action(exe: &Path) -> String {
 fn can_use_scheduled_task_for_current_args() -> bool {
     std::env::args()
         .skip(1)
-        .all(|arg| arg == ADMIN_RESTARTED_ARG)
+        .all(|arg| arg == ADMIN_RESTARTED_ARG || arg == crate::autostart::AUTO_LAUNCH_ARG)
 }
 
 #[cfg(target_os = "windows")]
