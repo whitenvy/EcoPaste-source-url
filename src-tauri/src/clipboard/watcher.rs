@@ -269,10 +269,6 @@ impl ClipboardHandler for ClipboardChangeHandler {
         // 顺序换不得：guard 判定依赖 content_hash，必须先把 payload 读出来才能判，
         // 而 read_all 期间用户可能已经切走前台。
         let source = source::detect_frontmost();
-        let source_url = source
-            .as_ref()
-            .filter(|app| source::is_chrome(app))
-            .and_then(|_| source::read_chrome_source_url());
 
         // 用户在偏好里勾选了「过滤此应用」时，本次复制整条直接丢弃——不读取、不入库、不 emit。
         // 提前到读 payload 前判定，省掉无效的 OS 调用 + 图片解码开销。
@@ -293,6 +289,12 @@ impl ClipboardHandler for ClipboardChangeHandler {
                 return;
             }
         }
+
+        // 仅对 Chrome 做同步 URL 读取；过滤应用已在上面提前返回。
+        let source_url = source
+            .as_ref()
+            .filter(|app| source::is_chrome(app))
+            .and_then(|_| source::read_chrome_source_url());
 
         let settings = self
             .app

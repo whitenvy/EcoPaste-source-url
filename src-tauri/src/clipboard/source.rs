@@ -42,12 +42,18 @@ pub fn detect_frontmost() -> Option<FrontmostApp> {
 pub fn extract_source_url(html: Option<&str>) -> Option<String> {
     let html = html?;
     let line = html.lines().find(|line| line.starts_with("SourceURL:"))?;
-    let value = line["SourceURL:".len()..].trim();
+    normalize_source_url(&line["SourceURL:".len()..])
+}
+
+fn normalize_source_url(value: &str) -> Option<String> {
+    let value = value.trim();
     if value.is_empty() {
         return None;
     }
     let url = if value.starts_with("http://") || value.starts_with("https://") {
         value.to_owned()
+    } else if value.contains("://") {
+        return None;
     } else {
         format!("https://{value}")
     };
@@ -70,7 +76,13 @@ pub fn read_chrome_source_url() -> Option<String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Falls back to Chrome's address bar only when CF_HTML has no source URL.
 pub fn read_chrome_source_url() -> Option<String> {
+    read_cf_html_source_url().or_else(read_chrome_omnibox_url)
+}
+
+#[cfg(target_os = "windows")]
+fn read_cf_html_source_url() -> Option<String> {
     use std::ptr;
     use winapi::shared::minwindef::UINT;
     use winapi::um::winbase::{GlobalLock, GlobalSize, GlobalUnlock};
@@ -111,9 +123,108 @@ pub fn read_chrome_source_url() -> Option<String> {
     result
 }
 
+#[cfg(target_os = "windows")]
+/// Walks Chrome's control tree with strict limits and never enters page documents.
+fn read_chrome_omnibox_url() -> Option<String> {
+    use std::time::{Duration, Instant};
+
+    use ::windows::Win32::Foundation::RPC_E_CHANGED_MODE;
+    use ::windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_MULTITHREADED,
+    };
+    use ::windows::Win32::UI::Accessibility::{
+        CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationTreeWalker,
+        IUIAutomationValuePattern, UIA_DocumentControlTypeId, UIA_ValuePatternId,
+    };
+    use ::windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+    const MAX_NODES: usize = 96;
+    const MAX_DEPTH: usize = 12;
+    const MAX_ELAPSED: Duration = Duration::from_millis(200);
+
+    /// Keeps the synchronous clipboard callback bounded while locating the omnibox.
+    unsafe fn find_omnibox(
+        walker: &IUIAutomationTreeWalker,
+        root: IUIAutomationElement,
+        started: Instant,
+    ) -> Option<String> {
+        let mut stack = vec![(root, 0usize)];
+        let mut visited = 0usize;
+
+        while let Some((element, depth)) = stack.pop() {
+            visited += 1;
+            if visited > MAX_NODES || started.elapsed() > MAX_ELAPSED {
+                return None;
+            }
+
+            if element
+                .CurrentClassName()
+                .ok()
+                .is_some_and(|name| name == "OmniboxViewViews")
+            {
+                let pattern = element
+                    .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
+                    .ok()?;
+                return pattern
+                    .CurrentValue()
+                    .ok()
+                    .and_then(|value| normalize_source_url(&value.to_string()));
+            }
+
+            if depth >= MAX_DEPTH
+                || element.CurrentControlType().ok() == Some(UIA_DocumentControlTypeId)
+            {
+                continue;
+            }
+
+            let mut children = Vec::new();
+            let mut child = walker.GetFirstChildElement(&element).ok();
+            while let Some(current) = child {
+                if started.elapsed() > MAX_ELAPSED {
+                    return None;
+                }
+                if visited + stack.len() + children.len() >= MAX_NODES {
+                    break;
+                }
+                child = walker.GetNextSiblingElement(&current).ok();
+                children.push((current, depth + 1));
+            }
+            stack.extend(children.into_iter().rev());
+        }
+
+        None
+    }
+
+    unsafe {
+        let should_uninitialize = match CoInitializeEx(None, COINIT_MULTITHREADED) {
+            Ok(()) => true,
+            Err(err) if err.code() == RPC_E_CHANGED_MODE => false,
+            Err(_) => return None,
+        };
+        let result = (|| {
+            let hwnd = GetForegroundWindow();
+            if hwnd.0 == 0 {
+                return None;
+            }
+
+            let started = Instant::now();
+            let automation: IUIAutomation =
+                CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()?;
+            let root = automation.ElementFromHandle(hwnd).ok()?;
+            let walker = automation.ControlViewWalker().ok()?;
+            find_omnibox(&walker, root, started)
+        })();
+        if should_uninitialize {
+            CoUninitialize();
+        }
+        result
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::extract_source_url;
+    use super::{extract_source_url, normalize_source_url};
 
     #[test]
     fn extracts_chrome_cf_html_source_url() {
@@ -124,6 +235,15 @@ mod tests {
             Some("https://example.com/page".to_owned())
         );
         assert_eq!(extract_source_url(Some("SourceURL:not a url")), None);
+    }
+
+    #[test]
+    fn normalizes_chrome_omnibox_url() {
+        assert_eq!(
+            normalize_source_url("bilibili.com/video/BV15ZMP6bEYZ"),
+            Some("https://bilibili.com/video/BV15ZMP6bEYZ".to_owned())
+        );
+        assert_eq!(normalize_source_url("chrome://settings"), None);
     }
 }
 
