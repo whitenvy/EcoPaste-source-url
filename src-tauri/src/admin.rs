@@ -142,7 +142,7 @@ pub fn sync_scheduled_task(configured: bool) {
 pub fn launch_elevated_current_process() -> Result<()> {
     #[cfg(target_os = "windows")]
     {
-        if try_launch_elevated_current_process() {
+        if try_launch_elevated_current_process(true) {
             return Ok(());
         }
 
@@ -184,7 +184,8 @@ pub fn handle_startup_auto_elevation() {
             return;
         }
 
-        if try_launch_elevated_current_process() {
+        let args = std::env::args().collect::<Vec<_>>();
+        if try_launch_elevated_current_process(startup_allows_uac(&args)) {
             std::process::exit(0);
         }
     }
@@ -289,7 +290,7 @@ fn run_via_scheduled_task() -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn try_launch_elevated_current_process() -> bool {
+fn try_launch_elevated_current_process(allow_uac: bool) -> bool {
     if can_use_scheduled_task_for_current_args()
         && is_scheduled_task_exists()
         && is_scheduled_task_path_valid()
@@ -298,7 +299,12 @@ fn try_launch_elevated_current_process() -> bool {
         return true;
     }
 
-    try_launch_with_uac()
+    allow_uac && try_launch_with_uac()
+}
+
+#[cfg(target_os = "windows")]
+fn startup_allows_uac(args: &[String]) -> bool {
+    !crate::autostart::is_autostart_launch(args)
 }
 
 #[cfg(target_os = "windows")]
@@ -429,4 +435,27 @@ fn wide_null(value: &str) -> Vec<u16> {
         .encode_wide()
         .chain(std::iter::once(0))
         .collect()
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::startup_allows_uac;
+
+    #[test]
+    fn autostart_disables_uac_fallback() {
+        let cases = [
+            (vec!["EcoPaste.exe", "--auto-launch"], false),
+            (
+                vec!["EcoPaste.exe", "--auto-launch", "backup.ecopastebak"],
+                false,
+            ),
+            (vec!["EcoPaste.exe"], true),
+            (vec!["EcoPaste.exe", "backup.ecopastebak"], true),
+        ];
+
+        for (args, expected) in cases {
+            let args = args.into_iter().map(str::to_owned).collect::<Vec<_>>();
+            assert_eq!(startup_allows_uac(&args), expected);
+        }
+    }
 }

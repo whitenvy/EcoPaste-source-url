@@ -557,10 +557,14 @@ not a frontend-only permission prompt.
 - If `runAsAdmin=true` and the process is not elevated, Rust tries to launch an
   elevated process and exits the unelevated process only after launch succeeds.
 - Relaunch prefers a valid scheduled task only when current arguments are safe
-  for the static task action, meaning no external arguments beyond the internal
-  restart marker. Dynamic arguments such as file-open backup paths or
-  `--auto-launch` fall back to `ShellExecuteW` with the `runas` verb so they can
-  be preserved.
+  for the static task action: the internal restart marker and `--auto-launch`
+  are allowed, while external arguments such as file-open backup paths require
+  the dynamic UAC path.
+- An `--auto-launch` process must never call `ShellExecuteW("runas")`. If the
+  scheduled task is missing, stale, or fails to run, the current unelevated
+  process continues normal startup so Windows login does not show a UAC prompt.
+- Manual launch and explicit administrator restart may still fall back to
+  `ShellExecuteW("runas")` when the scheduled task cannot be used.
 - React renders `AdminLaunchStatus` and sends user intent through command
   wrappers. It must not call Windows APIs or infer token elevation itself.
 
@@ -570,7 +574,10 @@ not a frontend-only permission prompt.
 - UAC cancelled or elevated launch fails -> command error
   `administrator permission request was cancelled or failed`; current process
   remains open.
-- Scheduled task path mismatch -> task is not considered ready; fallback to UAC.
+- Scheduled task path mismatch during `--auto-launch` -> continue the current
+  unelevated process without UAC.
+- Scheduled task path mismatch during manual or explicit administrator launch
+  -> fallback to UAC.
 - `set_run_as_admin(false)` while elevated -> Rust deletes the scheduled task
   best-effort after settings update.
 - Early settings or storage manifest read failure -> auto-elevation is skipped
@@ -591,6 +598,8 @@ not a frontend-only permission prompt.
 
 - Backend: unit-test Windows command-line quoting for scheduled task / UAC
   arguments.
+- Backend: unit-test that any argument list containing `--auto-launch` disables
+  UAC fallback, while manual launch argument lists keep it enabled.
 - Backend: `cargo clippy -- -D warnings` must pass on Windows-specific code.
 - Backend: `cargo test` must include settings default coverage for
   `general.run_as_admin`.
@@ -598,6 +607,9 @@ not a frontend-only permission prompt.
   `runAsAdmin` setting.
 - Manual Windows validation is required for UAC approval/cancel and scheduled
   task launch behavior.
+- Manual Windows validation must also run `EcoPaste.exe --auto-launch` with a
+  usable and an unusable `EcoPasteAdmin` task; neither case may show UAC, and
+  the unusable-task case must leave the unelevated app running.
 
 ### 7. Wrong vs Correct
 
